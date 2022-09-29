@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/">
+        <file>main.qml</file>
+        <file>cube.fsh</file>
+        <file>cube.vsh</file>
+        <file>quad.fsh</file>
+        <file>quad.vsh</file>
+        <file>SeparateWindow.qml</file>
+        <file>watermelon.jpg</file>
+    </qresource>
+</RCC>

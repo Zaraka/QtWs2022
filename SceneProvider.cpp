@@ -1,0 +1,85 @@
+/***************************************************************************
+** MIT License
+**
+** Copyright (c) 2022 Nikita Vaňků
+**
+** Permission is hereby granted, free of charge, to any person obtaining a copy
+** of this software and associated documentation files (the "Software"), to deal
+** in the Software without restriction, including without limitation the rights
+** to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+** copies of the Software, and to permit persons to whom the Software is
+** furnished to do so, subject to the following conditions:
+**
+** The above copyright notice and this permission notice shall be included in all
+** copies or substantial portions of the Software.
+**
+** THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+** IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+** FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+** AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+** LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+** OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+** SOFTWARE.
+**
+******************************************************************************/
+
+#include "SceneProvider.h"
+
+#include <QDebug>
+#include <QQmlEngine>
+#include <QRunnable>
+#include <QThread>
+
+namespace {
+    constexpr int SceneWidth  = 800;
+    constexpr int SceneHeight = 600;
+} // namespace
+
+class CleanupJob : public QRunnable {
+    Q_DISABLE_COPY(CleanupJob)
+public:
+    explicit CleanupJob(SceneProviderRenderer* sceneProviderRenderer) : m_sceneProviderRenderer(sceneProviderRenderer) {}
+    void run() override { delete m_sceneProviderRenderer; }
+
+private:
+    SceneProviderRenderer* m_sceneProviderRenderer;
+};
+
+SceneProvider::SceneProvider(QQuickItem* parent) : QQuickItem(parent) {
+    connect(this, &QQuickItem::windowChanged, this, &SceneProvider::onWindowChanged);
+}
+
+void SceneProvider::declareQml() {
+    qmlRegisterType<SceneProvider>("App", 1, 0, "SceneProvider");
+}
+
+void SceneProvider::releaseResources() {
+    window()->scheduleRenderJob(new CleanupJob(m_sceneProviderRenderer), QQuickWindow::BeforeSynchronizingStage);
+    m_sceneProviderRenderer = nullptr;
+}
+
+void SceneProvider::onWindowChanged(QQuickWindow* window) {
+    m_connectionInitialized = connect(window, &QQuickWindow::sceneGraphInitialized, [this, window] {
+        disconnect(m_connectionInitialized);
+        // We are currenthly in a render thread
+        m_sceneProviderRenderer = new SceneProviderRenderer();
+        m_sceneProviderRenderer->init(window, {SceneWidth, SceneHeight});
+
+        // Make sure we are connecting dirrectly so the signals won't get queued
+        connect(window,
+                &QQuickWindow::beforeSynchronizing,
+                m_sceneProviderRenderer,
+                &SceneProviderRenderer::synchronize,
+                Qt::DirectConnection);
+        connect(window, //
+                &QQuickWindow::beforeRendering,
+                m_sceneProviderRenderer,
+                &SceneProviderRenderer::render,
+                Qt::DirectConnection);
+        connect(window,
+                &QQuickWindow::sceneGraphInvalidated,
+                m_sceneProviderRenderer,
+                &SceneProviderRenderer::cleanup,
+                Qt::DirectConnection);
+    });
+}
